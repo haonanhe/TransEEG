@@ -16,6 +16,7 @@ from motorimagery.fbcnet import deepConvNet, eegNet
 from model import EEGTransformer, NaiveTransformer
 from conv_model import ConvNaiveTransformer
 from data_processing import *
+from utils import *
 
 ############ Settings ############
 ### Bcicomp2008IIa
@@ -26,6 +27,7 @@ chanset = np.arange(22)
 n_channels = len(chanset)
 datapath = 'D:\\Trans_EEG\\data\\BCIIV_2a\\'
 subjects = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09']
+
 ### data processing 
 order, f1, f2, ftrans = 4, 2.1, 48, 2
 fpass = [f1*2.0/fs, f2*2.0/fs]
@@ -36,15 +38,19 @@ fb, fa = signal.cheby2(order, 30, fstop, btype='bandpass')
 timewin = [0.5, 4.5] # 0.5 s pre-task data
 sampleseg = [int(fs*timewin[0]), int(fs*timewin[1])]
 n_timepoints = sampleseg[1] - sampleseg[0]
+
 ### EEGDataset
 tf_tensor = ToTensor()
+
 ### GPU or CPU
 torch.manual_seed(7)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 ### output path
 outpath = 'D:\\Trans_EEG\\training_results\\'
 if not os.path.exists(outpath):
     os.makedirs(outpath)
+    
 ### Training settings
 n_epochs = 15#1500
 n_epochs_full = 6#600
@@ -74,8 +80,20 @@ def get_model(model_type):
         model = ConvNaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
     return model
 
+# paths
+figpath = outpath + 'figs\\' + model_type + '\\'
+if not os.path.exists(figpath):
+    os.makedirs(figpath)
+modelpath = outpath + 'model_params\\' + model_type + '\\'
+if not os.path.exists(modelpath):
+    os.makedirs(modelpath)
+logpath = outpath + 'logs\\'
+if not os.path.exists(logpath):
+    os.makedirs(logpath)
+    
 ############ Train & Test ############
 test_accus = np.zeros(len(subjects))
+log_list = {}
 for ss in range(len(subjects)):
     subject = subjects[ss]
     print('Start training for subject ' + subject + '...')
@@ -147,7 +165,7 @@ for ss in range(len(subjects)):
                     early_stop = True
                     print('Early stop reached now continuing with full trainset')
                     epoch = 0
-                    epochs_df.drop(epochs_df.index, inplace=True)
+                    # epochs_df.drop(epochs_df.index, inplace=True)
                     trainset = trainset_full # Use the full train dataset
                     remember_best = RememberBest('valid_loss', order=1)
                     stop_criterion = Or( # for full trainset training
@@ -160,9 +178,6 @@ for ss in range(len(subjects)):
         test_accu, test_loss  = evaluate(model, testset, criterion=criterion, batch_size=batch_size, device=device)
         
         # save model
-        modelpath = outpath + 'model_params\\' + model_type + '\\'
-        if not os.path.exists(modelpath):
-            os.makedirs(modelpath)
         torch.save(model.state_dict(), modelpath + subject + '.pth')
         
         print((f"Epoch: {epoch}, "
@@ -172,21 +187,26 @@ for ss in range(len(subjects)):
                f"Epoch time = {time.time() - start_time: .3f} s"))
 
     test_accus[ss] = test_accu
+    log_list[subject] = epochs_df
+    for item in monitor_items:
+        plot_figs(epochs_df, item, figpath, subject)
 
+with open(logpath + 'acc.txt', 'a+') as f:
+    f.write(model_type)
+    for i in test_accus:
+        f.write(str(i) + ' ')
+    f.write('\n')
 print(f'Overall accuracy: {np.mean(test_accus): .3f}')
 
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # for 'OMP: Error #15:'
+# save monitor items
+np.save(logpath + model_type + '.npy', log_list)
 
-import matplotlib.pyplot as plt
-x = np.arange(len(test_accus))
-plt.bar(x, test_accus)
-plt.title('Averaged accuracy for all subjects')
-plt.xticks(x, subjects)
-plt.ylabel('Accuracy [%]')
-plt.grid(which='both', axis='both')
-plt.show()
-figpath = outpath + 'figs\\' + model_type + '\\'
-if not os.path.exists(figpath):
-    os.makedirs(figpath)
-plt.savefig(figpath + 'acc.png')
-print('Done')
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE" # for 'OMP: Error #15:'
+# plot bars
+plot_bar(test_accus, subjects, figpath)
+
+
+
+    
+    
+    
