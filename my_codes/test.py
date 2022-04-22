@@ -23,9 +23,16 @@ import torch
 # imasges = torch.cat((images, torch.zeros(n, c, w+2*padding, padding)), 3)
 # print(images)
 
-a = [0, 1, 2]
-b = [[1, 2, 0], [3, 4, 5]]
-c = [set(_) for _ in b]
-print(set(a))
-# print()
-print(set(a) in [set(_) for _ in b])
+# a = [0, 1, 2]
+# b = [[1, 2, 0], [3, 4, 5]]
+# c = [set(_) for _ in b]
+# print(set(a))
+# # print()
+# print(set(a) in [set(_) for _ in b])
+
+x = torch.ones(10, 3, 22, 100)
+# pooling = torch.nn.MaxPool2d((1,2))
+# x = pooling(x)
+conv = torch.nn.Conv2d(3, 3, (3, 3), padding='same', groups=3)
+x = conv(x)
+print(x.size())

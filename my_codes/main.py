@@ -13,7 +13,8 @@ from common.torchutils import train_epoch, evaluate
 
 from motorimagery.convnet import CSPNet, EEGNet, ShallowConvNet, DeepConvNet
 from motorimagery.fbcnet import deepConvNet, eegNet
-from model import EEGTransformer
+from model import EEGTransformer, NaiveTransformer
+from conv_model import ConvNaiveTransformer
 from data_processing import *
 
 ############ Settings ############
@@ -55,10 +56,22 @@ monitor_items = [
     ]
 train_after_earlystop = True
 
-model_type = 'EEGTransformer'
+model_type = 'ConvNaiveTransformer'
 def get_model(model_type):
-    if model_type == 'EEGTransformer':
-        model = EEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=2).to(device)
+    if model_type == 'CSPNet':
+        model = CSPNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
+    elif model_type == 'EEGNet':
+        model = EEGNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
+    elif model_type == 'ShallowConvNet':
+        model = ShallowConvNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
+    elif model_type == 'DeepConvNet':
+        model = DeepConvNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
+    elif model_type == 'EEGTransformer':
+        model = EEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
+    elif model_type == 'NaiveTransformer':
+        model = NaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
+    elif model_type == 'ConvNaiveTransformer':
+        model = ConvNaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
     return model
 
 ############ Train & Test ############
@@ -93,7 +106,6 @@ for ss in range(len(subjects)):
     validset = Subset(trainset_full, list(range(train_set_size, len(trainset_full))))
     ### model/criterion/optimizer
     model = get_model(model_type)
-    # model = EEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8).to(device)
     criterion = torch.nn.NLLLoss()
     optimizer = torch.optim.Adam(model.parameters())
     ### 
