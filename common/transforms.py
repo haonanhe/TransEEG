@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 
+
 """ We assume a (timepoints x channels) or (T, C) EEG epoch as input here """
 
 class Compose(object):

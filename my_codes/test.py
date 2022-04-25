@@ -50,6 +50,16 @@ import pandas as pd
 #     index=pd.date_range(start="2014-02-12", end="2014-02-15", freq="D"),
 # )
 
+# import matplotlib.pyplot as plt
+# x = list(range(0, len(df.index)))
+# print(x)
+# plt.plot(x, x)
+
+# df1 = pd.DataFrame(np.random.randn(500, 4))
+# print(len(df1.index))
+# data = np.load('/home/scutbci/public/hhn/Trans_EEG/training_results/logs/EEGTransformer.npy' ,  allow_pickle=True)
+# print(data)
+ 
 # a = {}
 # b = {}
 # a['a0'] = df
@@ -69,8 +79,8 @@ import pandas as pd
 # a = 'val_loss'
 # print(a[-4:])
 
-test1 = [0.8, 0.9, 0.6]
-test2 = [0.7, 0.3, 0.5]
+# test1 = [0.8, 0.9, 0.6]
+# test2 = [0.7, 0.3, 0.5]
 
 # with open('D:\Trans_EEG\codes\my_codes\\accs.txt', 'a+') as f:
 #     f.write('test1: ')
@@ -78,8 +88,21 @@ test2 = [0.7, 0.3, 0.5]
 #         f.write(str(i) + ' ')
 #     f.write('\n')
 
-with open('D:\Trans_EEG\codes\my_codes\\accs.txt', 'a+') as f:
-    f.write('test2: ')
-    for i in test2:
-        f.write(str(i) + ' ')
-    f.write('\n')
+# with open('D:\Trans_EEG\codes\my_codes\\accs.txt', 'a+') as f:
+#     f.write('test2: ')
+#     for i in test2:
+#         f.write(str(i) + ' ')
+#     f.write('\n')
+
+# from model import NaiveTransformer
+# model = NaiveTransformer(n_timepoints=1000, n_channels=22, n_classes=4, n_head=8, num_layers=2)
+# x = torch.ones(16, 1, 1000, 22)
+# y = model(x)
+
+from data_processing import *
+from common.transforms import *
+datapath = '/home/scutbci/public/hhn/Trans_EEG/data/BCIIV2a/'
+subject = 'A01'
+tf_tensor = ToTensor()
+trainset, validset, testset = load_dataset(datapath, subject, tf_tensor)
+print(trainset.type)

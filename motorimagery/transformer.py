@@ -4,7 +4,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 from common.attention import MultiheadAttention
 from common.torchutils import Expression, DepthwiseConv2d, cov, safe_log
+import math
 
+# positional embedding
+class PositionalEmbedding(nn.Module):
+    def __init__(self, d_model, max_len=512):
+        super().__init__()
+        
+        pe = torch.zeros(max_len, d_model).float()
+        pe.require_grad = False
+        
+        position = torch.arange(0, max_len).float().unsqueeze(1)
+        dive_term = (torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)).exp()
+        
+        pe[:, 0::2] = torch.sin(position * dive_term)
+        pe[:, 1::2] = torch.cos(position * dive_term)
+        
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+    
+    def forward(self, x):
+        return self.pe[:, :x.size(1)]
 
 class EEGTransformer(nn.Module):
     def __init__(self, n_timepoints, n_channels, n_classes, dropout = 0.1,
@@ -22,6 +42,7 @@ class EEGTransformer(nn.Module):
         n_patches = n_filters_time * n_channels
         # positional encoding
         self.pos_embedding = nn.Parameter(torch.randn(1, n_patches, d_model))
+        # self.pos_embedding = PositionalEmbedding(d_model=d_model, max_len=d_model)
         self.pos_drop = nn.Dropout(dropout)
         # transformer
         self.transformer = Transformer(

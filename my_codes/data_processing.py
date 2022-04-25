@@ -3,6 +3,8 @@
 import os
 import torch
 from torch.utils.data import Dataset
+import sys
+sys.path.append("/home/scutbci/public/hhn/Trans_EEG/codes") 
 from common.datawrapper import read_matdata, read_gdfdata
 from common.signalproc import *
 
@@ -29,9 +31,9 @@ def load_eegdata(setname, datapath, subject):
     assert setname in _available_dataset, 'Unknown dataset name ' + setname
     if setname in ['bcicomp2008IIa', 'bcicomp2008IIa_2c']:
         fdatatrain = datapath+subject+'T.gdf'
-        flabeltrain = datapath+'true_labels\\'+subject+'T.mat'
+        flabeltrain = datapath+'true_labels/'+subject+'T.mat'
         fdatatest = datapath+subject+'E.gdf'
-        flabeltest = datapath+'true_labels\\'+subject+'E.mat'
+        flabeltest = datapath+'true_labels/'+subject+'E.mat'
         dataTrain, targetTrain, dataTest, targetTest = \
             load_eegdata_bcicomp2008IIa(fdatatrain, flabeltrain, fdatatest, flabeltest)
     return dataTrain, targetTrain, dataTest, targetTest
@@ -151,6 +153,37 @@ def load_dataset_preprocessed(datapath, subject):
     f = np.load(datapath+'processed/'+subject+'.npz')
     return f['dataTrain'], f['targetTrain'], f['dataTest'], f['targetTest']
 
+import os
+from torch.utils.data.dataset import Subset
+def load_dataset(datapath, subject, tf_tensor):
+    ## data processing
+    # print('Load EEG epochs for subject ' + subject)
+    # dataTrain, targetTrain, dataTest, targetTest = load_eegdata(setname, datapath, subject)
+    # print('Extract raw features from epochs for subject ' + subject)
+    # featTrain, labelTrain = extract_rawfeature(dataTrain, targetTrain, sampleseg, chanset, [fb, fa])
+    # featTest, labelTest = extract_rawfeature(dataTest, targetTest, sampleseg, chanset, [fb, fa])
+    # if not os.path.isdir(datapath + 'rawfeatures\\'):
+    #     os.mkdir(datapath + 'rawfeatures\\')
+    # np.savez(datapath+'rawfeatures\\'+subject+'.npz',
+    #              dataTrain=featTrain, labelTrain=labelTrain, dataTest=featTest, labelTest=labelTest)
+    
+    ### load data
+    print('Load raw features for subject ' + subject + '...')
+    data = np.load(datapath+'rawfeatures/'+subject+'.npz')
+    dataTrain, labelTrain = data['dataTrain'], data['labelTrain']
+    dataTest, labelTest = data['dataTest'], data['labelTest']
+    trainset_full = EEGDataset(dataTrain, labelTrain, tf_tensor)
+    testset = EEGDataset(dataTest, labelTest, tf_tensor)
+    ### dataset split
+    valid_set_fraction = 0.2
+    valid_set_size = int(len(trainset_full) * valid_set_fraction)
+    train_set_size = len(trainset_full) - valid_set_size
+    # trainset, validset = random_split(trainset_full, [train_set_size, valid_set_size])
+    trainset = Subset(trainset_full, list(range(0, train_set_size)))
+    validset = Subset(trainset_full, list(range(train_set_size, len(trainset_full))))
+
+    return trainset, validset, testset
+    
 
 if __name__ == '__main__':
 

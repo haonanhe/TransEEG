@@ -8,54 +8,15 @@ import math
 # self-defined
 from common.torchutils import Expression, DepthwiseConv2d, cov, safe_log
 from model import *
-from model import _get_activation_fn
+from utils import _get_activation_fn
 
-# conv multi-head attention
-class ConvMultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_head, dropout=0.1):
-        super(ConvMultiHeadAttention, self).__init__()
-        assert d_model % n_head == 0
-        
-        filter_size_time = d_model // 4
-        
-        self.d_head = d_model // n_head
-        self.n_head = n_head
-        
-        
-        self.conv_q = nn.Conv2d(1, n_head, (filter_size_time, 1), padding='same', bias=False) 
-        self.conv_k = nn.Conv2d(1, n_head, (filter_size_time, 1), padding='same', bias=False)
-        self.conv_v = nn.Conv2d(1, n_head, (filter_size_time, 1), padding='same', bias=False)
-        self.pooling = nn.MaxPool2d((1, n_head))
-        self.w_out = nn.Linear(d_model, d_model)
-        self.attention = Attention()
-        
-        self.dropout = nn.Dropout(p=dropout)
-        
-    def forward(self, query, key, value, mask=None):
-        # query.size() = (batch_size, n_channels, d_model)
-        batch_size = query.size(0)
-        query = query.unsqueeze(1) # query.size() = (batch_size, 1, n_channels, d_model)
-        key = key.unsqueeze(1)
-        value = value.unsqueeze(1)
-        # conv: (batch_size, n_head, n_channels, d_model)
-        # pooling: (batch_size, n_head, n_channels, d_head)
-        query = self.pooling(self.conv_q(query)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2) # transpose for attention
-        key = self.pooling(self.conv_k(key)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2)
-        value = self.pooling(self.conv_v(value)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2)
-        
-        x, attn = self.attention(query, key, value, mask=mask, dropout=self.dropout)
-        
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.n_head*self.d_head)
-        
-        return self.w_out(x)
-
-# ConvTransformer  
+# ConvTransformer block   
 class ConvTransformerEncoderLayer(nn.Module):
-    def __init__(self, d_model, n_head, d_ff=2048, dropout=0.1, activation="relu",
+    def __init__(self, d_model, n_head, d_ff=2048, dropout=0.1, filter_size_time=25, activation="relu",
                  layer_norm_eps=1e-5, normalize_before=False):
         super(ConvTransformerEncoderLayer, self).__init__()
         
-        self.self_attn = ConvMultiHeadAttention(d_model, n_head, dropout=dropout)
+        self.self_attn = ConvMultiHeadAttention(d_model, n_head, dropout=dropout, filter_size_time=filter_size_time)
 
         self.norm1 = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.norm2 = nn.LayerNorm(d_model, eps=layer_norm_eps)
@@ -67,8 +28,13 @@ class ConvTransformerEncoderLayer(nn.Module):
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
 
+    def __setstate__(self, state):
+        if 'activation' not in state:
+            state['activation'] = F.relu
+        super(ConvTransformerEncoderLayer, self).__setstate__(state)
+
     def forward_post(self, src, src_mask = None):
-        src2 = self.self_attn(src, src, src)[0]
+        src2 = self.self_attn(src, src, src, mask=src_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.feed_forward(src)
@@ -78,7 +44,7 @@ class ConvTransformerEncoderLayer(nn.Module):
 
     def forward_pre(self, src, src_mask = None):
         src2 = self.norm1(src)
-        src2 = self.self_attn(src2, src2, src2)[0]
+        src2 = self.self_attn(src2, src2, src2, mask=src_mask)[0]
         src = src + self.dropout1(src2)
         src2 = self.norm2(src)
         src2 = self.feed_forward(src2)
@@ -90,10 +56,11 @@ class ConvTransformerEncoderLayer(nn.Module):
             return self.forward_pre(src, src_mask)
         return self.forward_post(src, src_mask)
 
-# ConvTransformer 
+
+# ConvTransformer network
 class ConvTransformer(nn.Module):
     def __init__(self, d_model: int = 512, n_head: int = 8, num_layers: int = 6,
-                 d_ff: int = 2048, dropout: float = 0.1,
+                 d_ff: int = 2048, dropout: float = 0.1, filter_size_time: int=25,
                  activation: str = "relu", layer_norm_eps: float = 1e-5):
         super(ConvTransformer, self).__init__()
         #
@@ -102,7 +69,7 @@ class ConvTransformer(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
 
-        encoder_layer = ConvTransformerEncoderLayer(d_model, n_head, d_ff, dropout,
+        encoder_layer = ConvTransformerEncoderLayer(d_model, n_head, d_ff, dropout, filter_size_time,
                                                 activation, layer_norm_eps)
         encoder_norm = nn.LayerNorm(d_model, eps=layer_norm_eps)
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers, encoder_norm)
@@ -118,17 +85,16 @@ class ConvTransformer(nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
-                
+
 # ConvNaiveTransformer               
 class ConvNaiveTransformer(nn.Module):
-    def __init__(self, n_timepoints, n_channels, n_classes, dropout = 0.1,
-                 n_head = 8, num_layers = 2, ffn_dim = 512,):
+    def __init__(self, n_timepoints, n_channels, n_classes, dropout = 0.1, filter_size_time=25,
+                 n_head = 8, num_layers = 2, ffn_dim = 512):
         super().__init__()
-        
         d_model = n_timepoints
-
+  
         # positional encoding
-        self.pos_embedding = nn.Parameter(torch.randn(1, n_channels, d_model))
+        self.pos_embedding = PositionalEmbedding(d_model=d_model, max_len=d_model)
         self.pos_drop = nn.Dropout(dropout)
         # transformer
         self.transformer = ConvTransformer(
@@ -136,6 +102,7 @@ class ConvNaiveTransformer(nn.Module):
             n_head = n_head,
             num_layers = num_layers,
             d_ff = ffn_dim,
+            filter_size_time=filter_size_time
         )
         # classfier
         self.classifier = nn.Sequential(
@@ -156,12 +123,13 @@ class ConvNaiveTransformer(nn.Module):
 
     def forward(self, eeg_epoch):
         # (bs, 1, n_timepoints, n_channels)
-        x = eeg_epoch.permute(0, 1, 3, 2) # (bs, 1, n_channels, n_timepoints)
+        x = eeg_epoch.permute(0, 1, 3, 2) 
         raw_shape = x.shape
         x = x.reshape(x.size(0), -1, x.size(-1)) # (bs, n_channels, n_timepoints)
-        x = self.pos_drop(x + self.pos_embedding)
+        x = self.pos_drop(x + self.pos_embedding(x))
         x = self.transformer(x)
-        x = x.view(raw_shape) # (bs, 1, n_channels, n_timepoints)
+        # (bs, 1, n_channels, n_timepoints)
+        x = x.view(raw_shape)
         x = x.permute(0, 1, 3, 2) # (bs, 1, n_timepoints, n_channels)
         x = self.classifier(x)
         out = x[:, :, 0, 0]

@@ -245,7 +245,7 @@ class RememberBest(object):
 
         """
         # Remove epochs past the best one from epochs dataframe
-        epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
+        # epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
         model.load_state_dict(self.model_state_dict)
         optimizer.load_state_dict(self.optimizer_state_dict)
 
@@ -310,15 +310,16 @@ def evaluate(model, datasource, criterion, batch_size=1, device=torch.device('cp
 
     accus = []
     losses = []
-    for batch_x, batch_y in valid_dataloader:
-        batch_x = batch_x.to(device)
-        batch_y = batch_y.to(device)
+    with torch.no_grad():
+        for batch_x, batch_y in valid_dataloader:
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
 
-        batch_yp = model(batch_x)
-        loss = criterion(batch_yp, batch_y)
-        accu = accuracy(batch_yp, batch_y)[0]
-        losses.append(loss.item()/batch_x.shape[0])
-        accus.append(accu.item())
+            batch_yp = model(batch_x)
+            loss = criterion(batch_yp, batch_y)
+            accu = accuracy(batch_yp, batch_y)[0]
+            losses.append(loss.item()/batch_x.shape[0])
+            accus.append(accu.item())
 
     return np.mean(accus), np.mean(losses)
 
