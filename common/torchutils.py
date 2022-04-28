@@ -269,7 +269,7 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-def train_epoch(model, datasource, criterion, optimizer, batch_size=32, device=torch.device('cpu')):
+def train_epoch(model, datasource, criterion, optimizer, scheduler, batch_size=32, device=torch.device('cpu')):
     model.train()
 
     if isinstance(datasource, Dataset):
@@ -294,6 +294,7 @@ def train_epoch(model, datasource, criterion, optimizer, batch_size=32, device=t
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
     return np.mean(accus), np.mean(losses)
 

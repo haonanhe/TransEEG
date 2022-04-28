@@ -155,6 +155,7 @@ def load_dataset_preprocessed(datapath, subject):
 
 import os
 from torch.utils.data.dataset import Subset
+from EEG_Transformer.common_spatial_pattern import csp
 def load_dataset(datapath, subject, tf_tensor):
     ## data processing
     # print('Load EEG epochs for subject ' + subject)
@@ -172,6 +173,23 @@ def load_dataset(datapath, subject, tf_tensor):
     data = np.load(datapath+'rawfeatures/'+subject+'.npz')
     dataTrain, labelTrain = data['dataTrain'], data['labelTrain']
     dataTest, labelTest = data['dataTest'], data['labelTest']
+
+    # mix train and test data
+    # all_data = np.concatenate((dataTrain, dataTest), 0)
+    # all_label = np.concatenate((labelTrain, labelTest), 0)
+    # dataTrain = all_data[:516]
+    # labelTrain = all_label[:516]
+    # dataTest = all_data[516:]
+    # labelTest = all_label[516:]
+
+    # # dataTrain:(288, 1000, 22)
+    # Wb = csp(dataTrain, labelTrain-1)  # common spatial pattern
+    # # Wb:(22, 16)
+    # dataTrain = dataTrain.transpose((0, 2, 1)) 
+    # dataTest = dataTest.transpose((0, 2, 1)) 
+    # dataTrain = np.einsum('acd, ce -> aed', dataTrain, Wb) # dataTrain:(288, 16, 1000)
+    # dataTest = np.einsum('acd, ce -> aed', dataTest, Wb)
+
     trainset_full = EEGDataset(dataTrain, labelTrain, tf_tensor)
     testset = EEGDataset(dataTest, labelTest, tf_tensor)
     ### dataset split
@@ -182,7 +200,7 @@ def load_dataset(datapath, subject, tf_tensor):
     trainset = Subset(trainset_full, list(range(0, train_set_size)))
     validset = Subset(trainset_full, list(range(train_set_size, len(trainset_full))))
 
-    return trainset, validset, testset
+    return trainset, validset, testset, trainset_full
     
 
 if __name__ == '__main__':

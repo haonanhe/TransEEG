@@ -1,108 +1,90 @@
-import numpy as np
-
-# a = [0] * 4
-# b = [[0] * 4]
-# c = [0 for _ in range(4)]
-# print(a)
-# print(b)
-# print(c)
-
 import torch
+import torch.nn as nn
 
-# images = torch.ones(1, 1, 3, 3)
-# print(images)
-# n, c, w, h = images.shape
-# padding = 1
-# images = images.clone()
-# images = torch.cat((torch.zeros(n, c, padding, h), images), 2)
-# print(images)
-# images = torch.cat((images, torch.zeros(n, c, padding, h)), 2)
-# print(images)
-# images = torch.cat((torch.zeros(n, c, w+2*padding, padding), images), 3)
-# print(images)
-# imasges = torch.cat((images, torch.zeros(n, c, w+2*padding, padding)), 3)
-# print(images)
+import sys
+sys.path.append("/home/scutbci/public/hhn/Trans_EEG/codes") 
+from common.torchutils import Expression, safe_log, square
+from common.torchutils import DepthwiseConv2d
 
-# a = [0, 1, 2]
-# b = [[1, 2, 0], [3, 4, 5]]
-# c = [set(_) for _ in b]
-# print(set(a))
-# # print()
-# print(set(a) in [set(_) for _ in b])
+from attention import ConvMultiHeadAttention, Attention
 
-# x = torch.ones(10, 3, 22, 100)
-# # pooling = torch.nn.MaxPool2d((1,2))
-# # x = pooling(x)
-# conv = torch.nn.Conv2d(3, 3, (3, 3), padding='same', groups=3)
-# x = conv(x)
+x = torch.ones(16, 1, 22, 1000)
+n_filters_time = 16
+filter_size_time = 25
+
+
+# model = ConvMultiHeadAttention(max_len, d_model, n_head)
+# x, _ = model(x, x, x)
 # print(x.size())
+# x: torch.Size([16, 22, 1000])
 
-import pandas as pd
+# conv multi-head attention
+class ConvMultiHeadAttention(nn.Module):
+    def __init__(self, max_len, d_model, n_head, emb_size, dropout=0.1, filter_size_time=25, n_filters=1):
+        super(ConvMultiHeadAttention, self).__init__()
+        assert d_model % n_head == 0
+        
+        self.d_model = d_model
+        self.d_head = d_model // n_head
+        self.n_head = n_head
+        self.max_len = max_len
 
-# df = pd.DataFrame(
-#     [
-#         [24.3, 75.7, "high"],
-#         [31, 87.8, "high"],
-#         [22, 71.6, "medium"],
-#         [35, 95, "medium"],
-#     ],
-#     columns=["temp_celsius", "temp_fahrenheit", "windspeed"],
-#     index=pd.date_range(start="2014-02-12", end="2014-02-15", freq="D"),
-# )
+        # extract temporal features from input
+        self.conv_q = DepthwiseConv2d(n_filters, n_head * emb_size, (filter_size_time, 1), bias=False)
+        self.conv_k = DepthwiseConv2d(n_filters, n_head * emb_size, (filter_size_time, 1), bias=False)
+        self.conv_v = DepthwiseConv2d(n_filters, n_head * emb_size, (filter_size_time, 1), bias=False)
+        self.pooling = nn.AvgPool2d((n_head, 1))
 
-# import matplotlib.pyplot as plt
-# x = list(range(0, len(df.index)))
-# print(x)
-# plt.plot(x, x)
+        self.w_out = nn.Linear(d_model, d_model)
+        self.conv_out = nn.Conv2d(1, 1, kernel_size=1)
 
-# df1 = pd.DataFrame(np.random.randn(500, 4))
-# print(len(df1.index))
-# data = np.load('/home/scutbci/public/hhn/Trans_EEG/training_results/logs/EEGTransformer.npy' ,  allow_pickle=True)
-# print(data)
+        self.attention = Attention()
+        
+        self.dropout = nn.Dropout(p=dropout)
+        
+    def forward(self, query, key, value, mask=None):
+        # query.size() = (batch_size, n_filters*n_channels, d_model)
+        batch_size = query.size(0)
+        query = query.view(batch_size, -1, self.d_model, self.max_len)
+        key = key.view(batch_size, -1, self.d_model, self.max_len)
+        value = value.view(batch_size, -1, self.d_model, self.max_len)
+
+        query = self.conv_q(query)
+        print(query.size())
+        # query = self.pooling(query)
+        # print(query.size())
+        query = query.view(batch_size, -1, emb_size, self.max_len)
+        print(query.size())
+        query = query.transpose(2, 2)
+        print(query.size())
+
+        # conv: torch.Size([16, 4, 1000, 22])
+        # pooling: ([16, 4, 250, 22])
+        # query: torch.Size([16, 22, 1000])
+        # query = self.pooling(self.conv_q(query)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2) # transpose for attention
+        # key = self.pooling(self.conv_k(key)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2)
+        # value = self.pooling(self.conv_v(value)).view(batch_size, -1, self.n_head, self.d_head).transpose(1, 2)
+
+        if mask is not None:
+            mask = mask.unsqueeze(1) 
+        x, attn = self.attention(query, key, value, mask=mask, dropout=self.dropout)
+        
+        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.n_head*self.d_head)
+        x = x.unsqueeze(1)
+        x = self.conv_out(x)
+        x = x.view(batch_size, -1, self.n_head*self.d_head)
+        # torch.Size([16, 22, 1000])
  
-# a = {}
-# b = {}
-# a['a0'] = df
-# b['a1'] = df
+        # x = self.w_out(x)
 
-# np.save('my_codes/file.npy', a)
-# new_dict = np.load('my_codes/file.npy', allow_pickle='TRUE')
-# print(new_dict)
+        return x, attn
 
-# np.save('my_codes/file.npy', b)
-# new_dict = np.load('my_codes/file.npy', allow_pickle='TRUE')
-# print(new_dict)
-
-# # print(df['temp_celsius'].to_list())
-# print(df.index)
-
-# a = 'val_loss'
-# print(a[-4:])
-
-# test1 = [0.8, 0.9, 0.6]
-# test2 = [0.7, 0.3, 0.5]
-
-# with open('D:\Trans_EEG\codes\my_codes\\accs.txt', 'a+') as f:
-#     f.write('test1: ')
-#     for i in test1:
-#         f.write(str(i) + ' ')
-#     f.write('\n')
-
-# with open('D:\Trans_EEG\codes\my_codes\\accs.txt', 'a+') as f:
-#     f.write('test2: ')
-#     for i in test2:
-#         f.write(str(i) + ' ')
-#     f.write('\n')
-
-# from model import NaiveTransformer
-# model = NaiveTransformer(n_timepoints=1000, n_channels=22, n_classes=4, n_head=8, num_layers=2)
-# x = torch.ones(16, 1, 1000, 22)
-# y = model(x)
-
-from data_processing import *
-from common.transforms import *
-datapath = '/home/scutbci/public/hhn/Trans_EEG/data/BCIIV2a/'
-subject = 'A01'
-tf_tensor = ToTensor()
-trainset, validset, testset = load_dataset(datapath, subject, tf_tensor)
-print(trainset.type)
+max_len = 22
+d_model = 1000
+n_head = 4
+emb_size = 50
+x = torch.ones(16, 22, 1000)
+model = ConvMultiHeadAttention(max_len, d_model, n_head, emb_size)
+# model = nn.Conv2d(1, 1, (25, 1), padding='same')
+x, _ = model(x, x, x)
+print(x.size())

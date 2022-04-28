@@ -1,4 +1,5 @@
 import time
+import math
 import numpy as np
 from torch.utils.data import random_split
 from torch.utils.data.dataset import Subset
@@ -15,9 +16,11 @@ from motorimagery.convnet import CSPNet, EEGNet, ShallowConvNet, DeepConvNet
 from motorimagery.fbcnet import deepConvNet, eegNet
 # from motorimagery.transformer import EEGTransformer
 from model import EEGTransformer, NaiveTransformer
-from conv_model import ConvNaiveTransformer
+# from conv_model import #ConvNaiveTransformer#, ConvEEGTransformer
 from data_processing import *
 from utils import *
+# from vit import ViT
+from EEG_Transformer.Trans import ViT 
 
 ############ Settings ############
 ### Bcicomp2008IIa
@@ -53,9 +56,9 @@ if not os.path.exists(outpath):
     os.makedirs(outpath)
     
 ### Training settings
-n_epochs = 300#1500
-n_epochs_full = 300#600
-n_epochs_nochange = 50#200
+n_epochs = 1500#1500
+n_epochs_full = 600#600
+n_epochs_nochange = 200#200
 batch_size = 16
 monitor_items = [
     'train_accu', 'train_loss',
@@ -63,7 +66,7 @@ monitor_items = [
     ]
 train_after_earlystop = True
 
-model_type = 'ConvNaiveTransformer'
+model_type = 'NaiveTransformer'
 def get_model(model_type):
     if model_type == 'CSPNet':
         model = CSPNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
@@ -74,11 +77,15 @@ def get_model(model_type):
     elif model_type == 'DeepConvNet':
         model = DeepConvNet(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes).to(device)
     elif model_type == 'EEGTransformer':
-        model = EEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, nhead=8, num_layers=2).to(device)
+        model = EEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=2, num_layers=1).to(device)
     elif model_type == 'NaiveTransformer':
-        model = NaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
-    elif model_type == 'ConvNaiveTransformer':
-        model = ConvNaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=8, num_layers=2).to(device)
+        model = NaiveTransformer(max_len=n_channels, d_model=n_timepoints, n_classes=n_classes, n_head=4, num_layers=1, dropout=0.3, conv=True).to(device)
+    # elif model_type == 'ConvNaiveTransformer':
+    #     model = ConvNaiveTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=2, num_layers=1, dropout=0.3).to(device)
+    # elif model_type == 'ConvEEGTransformer':
+    #     model = ConvEEGTransformer(n_timepoints=n_timepoints, n_channels=n_channels, n_classes=n_classes, n_head=4, num_layers=1, dropout=0.3).to(device)
+    elif model_type == 'ViT':
+        model = ViT(emb_size=10, depth=3, n_classes=4).to(device)
     return model
 
 # paths
@@ -98,15 +105,27 @@ log_list = {}
 for ss in range(len(subjects)):
     subject = subjects[ss]
     ### load data
-    trainset, validset, testset = load_dataset(datapath, subject, tf_tensor)
+    trainset, validset, testset, trainset_full = load_dataset(datapath, subject, tf_tensor)
     ### model/criterion/optimizer
     model = get_model(model_type)
     criterion = torch.nn.NLLLoss()
     # criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001,  betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0001)
-    # adjust lr
-    lambda1 = lambda epoch: 0.65 ** epoch
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001,  betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001)
+
+    # # adjust lr
+    # lambda1 = lambda epoch: 0.65 ** epoch
+    # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
+
+    # warm up
+    warm_up_iter = 10
+    T_max = 50	
+    lr_max = 0.1	
+    lr_min = 1e-5
+    lambda0 = lambda cur_iter: cur_iter / warm_up_iter if  cur_iter < warm_up_iter else \
+            (lr_min + 0.5*(lr_max-lr_min)*(1.0+math.cos( (cur_iter-warm_up_iter)/(T_max-warm_up_iter)*math.pi)))/0.1
+    # LambdaLR
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda0)
+    
     ### 
     epochs_df = pd.DataFrame(columns=monitor_items)
     remember_best = RememberBest('valid_accu', order=-1)
@@ -127,7 +146,7 @@ for ss in range(len(subjects)):
         start_time = time.time()
         ## train & val
         train_accu, train_loss = train_epoch(
-            model, trainset, criterion=criterion, optimizer=optimizer,
+            model, trainset, criterion=criterion, optimizer=optimizer, scheduler=scheduler,
             batch_size=batch_size, device=device)
         valid_accu, valid_loss  = evaluate(model, validset, criterion=criterion, batch_size=batch_size, device=device)
         ## result logging
@@ -157,7 +176,6 @@ for ss in range(len(subjects)):
         #                 ]
         #             )
 
-        test_accu, test_loss  = evaluate(model, testset, criterion=criterion, batch_size=batch_size, device=device)
         
         # save model
         torch.save(model.state_dict(), modelpath + subject + '.pth')
@@ -165,8 +183,12 @@ for ss in range(len(subjects)):
         print((f"Epoch: {epoch}, "
                f"Train accu: {train_accu:.3f}, loss: {train_loss:.3f}, "
                f"Valid accu: {valid_accu:.3f}, loss: {valid_loss:.3f}, "
-               f"Test accu:  {test_accu:.3f},  loss: {test_loss:.3f}, "
+            #    f"Test accu:  {test_accu:.3f},  loss: {test_loss:.3f}, "
                f"Epoch time = {time.time() - start_time: .3f} s"))
+
+    remember_best.reset_to_best_model(epochs_df, model, optimizer)
+    test_accu, test_loss  = evaluate(model, testset, criterion=criterion, batch_size=batch_size, device=device)
+
     test_accus[ss] = test_accu
     log_list[subject] = epochs_df
     for item in monitor_items:
