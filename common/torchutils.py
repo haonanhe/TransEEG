@@ -269,7 +269,7 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 
-def train_epoch(model, datasource, criterion, optimizer, scheduler, batch_size=32, device=torch.device('cpu')):
+def train_epoch(model, datasource, criterion, optimizer, batch_size=32, device=torch.device('cpu')):
     model.train()
 
     if isinstance(datasource, Dataset):
@@ -281,10 +281,10 @@ def train_epoch(model, datasource, criterion, optimizer, scheduler, batch_size=3
 
     accus = []
     losses = []
-    for batch_x, batch_y in train_dataloader:
+    for batch_x, batch_y in train_dataloader:     
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
-
+        
         batch_yp = model(batch_x)
         loss = criterion(batch_yp, batch_y)
         accu = accuracy(batch_yp, batch_y)[0]
@@ -294,7 +294,6 @@ def train_epoch(model, datasource, criterion, optimizer, scheduler, batch_size=3
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        scheduler.step()
 
     return np.mean(accus), np.mean(losses)
 

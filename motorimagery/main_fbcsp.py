@@ -1,9 +1,14 @@
 # -*- coding:utf-8 -*-
 
+import sys
+sys.path.append("/home/scutbci/public/hhn/Trans_EEG/codes") 
+from my_codes.data_augmentation import data_augmentation
+
 import numpy as np
 from common.linear import *
 from common.spatialfilter import *
 from motorimagery.mireader import *
+
 
 
 """
@@ -39,7 +44,7 @@ fs = 250
 n_classes = 4
 chanset = np.arange(22)
 n_channels = len(chanset)
-datapath = 'E:/bcicompetition/bci2008/IIa/'
+datapath = '/home/scutbci/public/hhn/Trans_EEG/data/BCIIV2a/'
 # datapath = '/Users/yuty2009/data/bcicompetition/bci2008/IIa/'
 subjects = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09']
 
@@ -73,6 +78,7 @@ for ss in range(len(subjects)):
         fb, fa = signal.cheby2(order, 30, fstop, btype='bandpass')
         featTrain, labelTrain = extract_rawfeature(dataTrain, targetTrain, sampleseg, chanset, [fb, fa])
         featTest, labelTest = extract_rawfeature(dataTest, targetTest, sampleseg, chanset, [fb, fa])
+        featTrain, labelTrain = data_augmentation(dataTrain, labelTrain, dilation=4)
         featTrain_bands.append(featTrain)
         featTest_bands.append(featTest)
     featTrain_bands = np.transpose(np.stack(featTrain_bands, axis=0), [1, 0, 2, 3])
@@ -103,11 +109,11 @@ for ss in range(len(subjects)):
 
 print(f'Overall accuracy: {np.mean(test_accus): .3f}')
 
-import matplotlib.pyplot as plt
-x = np.arange(len(test_accus))
-plt.bar(x, test_accus*100)
-plt.title('Averaged accuracy for all subjects')
-plt.xticks(x, subjects)
-plt.ylabel('Accuracy [%]')
-plt.grid(which='both', axis='both')
-plt.show()
+# import matplotlib.pyplot as plt
+# x = np.arange(len(test_accus))
+# plt.bar(x, test_accus*100)
+# plt.title('Averaged accuracy for all subjects')
+# plt.xticks(x, subjects)
+# plt.ylabel('Accuracy [%]')
+# plt.grid(which='both', axis='both')
+# plt.show()

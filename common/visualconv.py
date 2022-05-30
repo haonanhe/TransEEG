@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 
+import sys
+sys.path.append("/home/scutbci/public/hhn/Trans_EEG/codes") 
+from common.transforms import *
+
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, random_split
 import numpy as np
 import matplotlib.pyplot as plt
 from common.utils import *
-from common.torchutils import train_epoch, evaluate, DEVICE
+from common.torchutils import train_epoch, evaluate#, DEVICE
 
 
 class SimpleModel(nn.Module):
@@ -73,6 +77,10 @@ torch.manual_seed(123456)
 tf = SimpleTransform()
 dataset = SimpleDataset(xs, ys, tf)
 
+torch.manual_seed(7)
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+
 n_folds = 10
 n_epochs = 20
 batch_size = 20
@@ -87,10 +95,10 @@ for i in range(n_folds):
         start = time.time()
 
         train_accu, train_loss = train_epoch(
-            model, trainset, loss_fn=loss_fn, optimizer=optimizer,
+            model, trainset, criterion=loss_fn, optimizer=optimizer,
             batch_size=batch_size, device=DEVICE)
         test_accu, test_loss  = evaluate(
-            model, testset, loss_fn=loss_fn, batch_size=batch_size, device=DEVICE)
+            model, testset, criterion=loss_fn, batch_size=batch_size, device=DEVICE)
 
         print((f"Epoch: {epoch}, "
                f"Train accu: {train_accu:.3f}, loss: {train_loss:.3f}, "
@@ -135,3 +143,4 @@ plt.ylabel('|P1(f)|')
 
 plt.tight_layout()
 plt.show()
+plt.savefig('/home/scutbci/public/hhn/Trans_EEG/training_results/figs/visualconv.png', dpi=500, bbox_inches = 'tight')
