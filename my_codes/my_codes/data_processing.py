@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-from einops import rearrange
 import torch
 from torch.utils.data import Dataset
 import sys
@@ -135,7 +134,7 @@ def extract_variance_multiband(data, target, bands, sampleseg, chanset):
     for k in range(num_bands):
         f1, f2 = bands[k]
         fb, fa = signal.butter(order, [2*f1/fs, 2*f2/fs], btype='bandpass')
-        # fb, fa = signal.cheby2(order, 40, [2*f1/fs, 2*f2/fs], btype='bandpass'
+        # fb, fa = signal.cheby2(order, 40, [2*f1/fs, 2*f2/fs], btype='bandpass')
         Rs = np.zeros([num_trials, num_channel_used, num_channel_used])
         for i in range(num_trials):
             signal_filtered = data[i]
@@ -156,10 +155,7 @@ def load_dataset_preprocessed(datapath, subject):
 
 import os
 from torch.utils.data.dataset import Subset
-from EEG_Transformer.common_spatial_pattern import csp
-from data_augmentation import data_augmentation, add_Gauss, cropping
-
-def load_dataset(datapath, subject, tf_tensor, aug=True, dilation=4):
+def load_dataset(datapath, subject, tf_tensor):
     ## data processing
     # print('Load EEG epochs for subject ' + subject)
     # dataTrain, targetTrain, dataTest, targetTest = load_eegdata(setname, datapath, subject)
@@ -176,46 +172,39 @@ def load_dataset(datapath, subject, tf_tensor, aug=True, dilation=4):
     data = np.load(datapath+'rawfeatures/'+subject+'.npz')
     dataTrain, labelTrain = data['dataTrain'], data['labelTrain']
     dataTest, labelTest = data['dataTest'], data['labelTest']
-    
-    all_data = np.concatenate((dataTrain, dataTest), 0)
-    all_label = np.concatenate((labelTrain, labelTest), 0)
-    np.random.seed(3)
-    all_shuff_num = np.random.permutation(len(all_data))
-    all_data = all_data[all_shuff_num]
-    all_label = all_label[all_shuff_num]
-
-    # BCI2008 2a
-    dataTrain = all_data[:516]
-    labelTrain = all_label[:516]
-    dataTest = all_data[516:]
-    labelTest = all_label[516:]
-
-    # BCI2005 IVa
-    # dataTrain = all_data[:224]
-    # labelTrain = all_label[:224]
-    # dataTest = all_data[224:]
-    # labelTest = all_label[224:]
-
-    # standardize
-    target_mean = np.mean(dataTrain)
-    target_std = np.std(dataTrain)
-    dataTrain = (dataTrain - target_mean) / target_std
-    dataTest = (dataTest - target_mean) / target_std
-    
-    # augmentation
-    if aug:
-        dataTrain, labelTrain = data_augmentation(dataTrain, labelTrain, dilation=dilation)
-        dataTrain = add_Gauss(dataTrain, mu=0, sigma=1e-2)
-
     trainset_full = EEGDataset(dataTrain, labelTrain, tf_tensor)
     testset = EEGDataset(dataTest, labelTest, tf_tensor)
     ### dataset split
     valid_set_fraction = 0.2
     valid_set_size = int(len(trainset_full) * valid_set_fraction)
     train_set_size = len(trainset_full) - valid_set_size
+    # trainset, validset = random_split(trainset_full, [train_set_size, valid_set_size])
     trainset = Subset(trainset_full, list(range(0, train_set_size)))
     validset = Subset(trainset_full, list(range(train_set_size, len(trainset_full))))
 
-    return trainset, validset, testset, trainset_full
+    return trainset, validset, testset
+    
+
+if __name__ == '__main__':
+
+    # setname = 'bcicomp2005IVa'
+    # datapath = 'E:/bcicompetition/bci2005/IVa/'
+    # subjects = ['aa', 'al', 'av', 'aw', 'ay']
+    setname = 'bcicomp2008IIa'
+    datapath = 'D:\\Trans_EEG\\data\\BCIIV_2a\\'
+    subjects = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09']
+
+    import os
+    if not os.path.isdir(datapath + 'processed/'):
+        os.mkdir(datapath + 'processed/')
+
+    for ss in range(len(subjects)):
+        subject = subjects[ss]
+
+        print('Load and extract continuous EEG into epochs for subject '+subject)
+        dataTrain, targetTrain, dataTest, targetTest = load_eegdata(setname, datapath, subject)
+
+        np.savez(datapath+'processed/'+subject+'.npz',
+                 dataTrain=dataTrain, targetTrain=targetTrain, dataTest=dataTest, targetTest=targetTest)
 
 
